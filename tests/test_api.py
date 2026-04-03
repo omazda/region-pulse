@@ -34,6 +34,13 @@ def test_location_directory_endpoint() -> None:
     assert "аксай" in response.json()["locations"]
 
 
+def test_provider_info_endpoint_defaults_to_rules() -> None:
+    response = client.get("/api/provider")
+
+    assert response.status_code == 200
+    assert response.json()["provider"] == "rules"
+
+
 def test_classify_category_endpoint() -> None:
     response = client.post(
         "/api/classify-category",
@@ -120,4 +127,75 @@ def test_extract_location_batch_endpoint() -> None:
         "city": None,
         "district": None,
         "address": None,
+        "provider": "rules",
+        "model": None,
     }
+
+
+def test_classify_category_endpoint_uses_llm_provider(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "functions.main.classify_category_llm",
+        lambda text, channel_name="", channel_description="": {
+            "category": "ЖКХ",
+            "scores": {
+                "ЖКХ": 0,
+                "Дороги и транспорт": 0,
+                "Здравоохранение": 0,
+                "Образование": 0,
+                "Экология и ЧС": 0,
+                "Экономика и промышленность": 0,
+            },
+            "matched_keywords": {
+                "ЖКХ": [],
+                "Дороги и транспорт": [],
+                "Здравоохранение": [],
+                "Образование": [],
+                "Экология и ЧС": [],
+                "Экономика и промышленность": [],
+            },
+            "provider": "openrouter",
+            "model": "qwen/qwen3.6-plus",
+        },
+    )
+
+    response = client.post(
+        "/api/classify-category?provider=llm",
+        json={
+            "text": "Тест",
+            "channel_name": "",
+            "channel_description": "",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["provider"] == "openrouter"
+    assert body["model"] == "qwen/qwen3.6-plus"
+
+
+def test_extract_location_endpoint_uses_llm_provider(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "functions.main.extract_location_llm",
+        lambda text, channel_name="", channel_description="": {
+            "region": "Ростовская область",
+            "city": "Ростов-на-Дону",
+            "district": None,
+            "address": "ул. Большая Садовая",
+            "provider": "openrouter",
+            "model": "qwen/qwen3.6-plus",
+        },
+    )
+
+    response = client.post(
+        "/api/extract-location?provider=llm",
+        json={
+            "text": "Тест",
+            "channel_name": "",
+            "channel_description": "",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["provider"] == "openrouter"
+    assert body["address"] == "ул. Большая Садовая"
