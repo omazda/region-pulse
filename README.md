@@ -1,21 +1,28 @@
 # Region Pulse
 
-Backend-прототип для кейса по анализу региональных новостей, обращений и сообщений граждан.
+LLM-only backend для анализа региональных сообщений, новостей и обращений граждан.
 
-Сервис умеет:
+Сервис использует модель через OpenRouter и умеет:
 
-- классифицировать сообщение по отрасли через `classify_category(text, channel_name, channel_description)`;
-- извлекать географию через `extract_location(text, channel_name, channel_description)`;
-- работать в двух режимах: `rules` и `llm`;
-- давать HTTP API для ручной проверки через Swagger;
-- обрабатывать как одиночные, так и batch-запросы;
-- запускать тесты через `pytest`.
+- классифицировать сообщение по категории;
+- извлекать географию из текста;
+- выделять ключевые слова;
+- обрабатывать одиночные и batch-запросы;
+- отдавать HTTP API и Swagger-документацию.
 
-## Функции
+## Что Умеет API
 
-### `classify_category`
+### Классификация
 
-Определяет категорию сообщения по тексту, названию канала и описанию канала.
+`POST /api/classify-category`
+
+Возвращает:
+
+- `category` — итоговая категория;
+- `scores` — оценка уверенности по каждой категории;
+- `matched_keywords` — ключевые слова, связанные с категориями;
+- `provider` — источник ответа, сейчас `openrouter`;
+- `model` — имя модели.
 
 Поддерживаемые категории:
 
@@ -26,19 +33,11 @@ Backend-прототип для кейса по анализу регионал�
 - `Экология и ЧС`
 - `Экономика и промышленность`
 
-Ответ содержит:
+### Извлечение Географии
 
-- `category` — итоговая категория
-- `scores` — количество совпадений по категориям
-- `matched_keywords` — найденные ключевые слова
-- `provider` — источник ответа: `rules` или `llm`
-- `model` — название модели, если использовался LLM-режим
+`POST /api/extract-location`
 
-### `extract_location`
-
-Извлекает географию из сообщения.
-
-Ответ содержит:
+Возвращает:
 
 - `region`
 - `city`
@@ -47,12 +46,23 @@ Backend-прототип для кейса по анализу регионал�
 - `provider`
 - `model`
 
-Сейчас используется локальный справочник по Ростовской области и простая нормализация, например:
+### Ключевые Слова
 
-- `Ростов` -> `Ростов-на-Дону`
-- `Аксай` -> `Аксайский район`
+`POST /api/extract-key-words`
 
-Если география не найдена, поля возвращаются как `null`.
+Возвращает:
+
+- `key_words`
+- `provider`
+- `model`
+
+## Стек
+
+- `FastAPI`
+- `Pydantic`
+- `httpx`
+- `python-dotenv`
+- `pytest`
 
 ## Структура Проекта
 
@@ -63,233 +73,229 @@ region-pulse/
 ├── tests/
 │   ├── test_api.py
 │   └── test_logic.py
+├── .env
 ├── .gitignore
 ├── pytest.ini
 ├── README.md
 └── requirements.txt
 ```
 
-## Установка И Запуск
+## Установка
 
 ```bash
-cd /Users/matvey/Desktop/region-pulse
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### Настройка `.env`
+## Настройка `.env`
 
-Создайте файл `.env` в корне проекта и укажите необходимые переменные окружения для вашего LLM-провайдера или локальной модели.
-
-Пример:
+Минимальный пример:
 
 ```env
+OPENROUTER_API_KEY=your_api_key
 REGION_PULSE_PROVIDER=llm
-LLM_MODEL=your_model_name
+OPENROUTER_MODEL=qwen/qwen3.6-plus:free
+OPENROUTER_APP_URL=http://localhost:8000
+OPENROUTER_APP_NAME=region-pulse
 ```
+
+Переменные:
+
+- `OPENROUTER_API_KEY` — ключ OpenRouter;
+- `REGION_PULSE_PROVIDER` — текущий режим, сейчас должен быть `llm`;
+- `OPENROUTER_MODEL` — модель для вызова;
+- `OPENROUTER_APP_URL` — ваш локальный URL приложения;
+- `OPENROUTER_APP_NAME` — имя приложения для заголовков OpenRouter.
 
 Важно:
 
-- приложение читает именно `.env`
-- `.env` добавлен в `.gitignore`
+- проект сейчас работает только через LLM;
+- локального `rules`-режима больше нет;
+- `.env` не должен попадать в git.
 
-Если вы хотите использовать только локальные правила, можно оставить:
-
-```env
-REGION_PULSE_PROVIDER=rules
-```
-
-### Запуск API
+## Запуск
 
 ```bash
-uvicorn functions.main:app --reload
+.venv/bin/uvicorn functions.main:app --reload
 ```
 
 После запуска:
 
 - root: `http://127.0.0.1:8000/`
 - docs: `http://127.0.0.1:8000/docs`
+- health: `http://127.0.0.1:8000/api/health`
 
-## Режимы Работы
-
-### `rules`
-
-Локальный режим без вызова модели.
-
-Используется:
-
-- ключевые слова для категоризации
-- справочник локаций для геопривязки
-- regex для извлечения адресов
-
-### `llm`
-
-Режим, в котором ответы формируются через языковую модель.
-
-Активный режим можно проверить через:
-
-```text
-GET /api/provider
-```
-
-Можно переключать режим:
-
-- глобально через `.env`
-- точечно через query-параметр `provider`
-
-Примеры:
-
-```text
-POST /api/classify-category?provider=llm
-POST /api/extract-location?provider=llm
-POST /api/classify-category?provider=rules
-POST /api/extract-location?provider=rules
-```
-
-## API
-
-Основные эндпоинты:
+## Эндпоинты
 
 - `GET /`
 - `GET /api/health`
 - `GET /api/provider`
 - `GET /api/categories`
-- `GET /api/location-directory`
 - `POST /api/classify-category`
 - `POST /api/classify-category/batch`
 - `POST /api/extract-location`
 - `POST /api/extract-location/batch`
+- `POST /api/extract-key-words`
 
-## Примеры Проверки API
+## Примеры Запросов
 
-### Категоризация
-
-`POST /api/classify-category`
+### `POST /api/classify-category`
 
 ```json
 {
   "text": "В Аксайском районе пятый день не вывозят мусор, контейнеры переполнены",
   "channel_name": "Ростов новости",
-  "channel_description": "Новости аксайского района и суворовского ТСЖ"
+  "channel_description": "Новости района"
 }
 ```
 
-Ожидаемый результат:
-
-- `category`: `ЖКХ`
-
-Еще пример:
+Пример ответа:
 
 ```json
 {
-  "text": "На центральной улице огромные ямы, пробки, автобусы идут с большим опозданием",
-  "channel_name": "Транспорт Ростова",
-  "channel_description": "Новости дорог и общественного транспорта"
+  "category": "ЖКХ",
+  "scores": {
+    "ЖКХ": 95,
+    "Дороги и транспорт": 5,
+    "Здравоохранение": 0,
+    "Образование": 0,
+    "Экология и ЧС": 10,
+    "Экономика и промышленность": 0
+  },
+  "matched_keywords": {
+    "ЖКХ": ["мусор", "контейнеры"],
+    "Дороги и транспорт": [],
+    "Здравоохранение": [],
+    "Образование": [],
+    "Экология и ЧС": [],
+    "Экономика и промышленность": []
+  },
+  "provider": "openrouter",
+  "model": "qwen/qwen3.6-plus:free"
 }
 ```
 
-Ожидаемый результат:
-
-- `category`: `Дороги и транспорт`
-
-### Извлечение Локации
-
-`POST /api/extract-location`
+### `POST /api/extract-location`
 
 ```json
 {
   "text": "В Аксайском районе на ул. Большая Садовая переполнены контейнеры",
   "channel_name": "Ростов новости",
-  "channel_description": "Новости аксайского района"
+  "channel_description": "Новости района"
 }
 ```
 
-Ожидаемый результат примерно такой:
+Пример ответа:
 
 ```json
 {
   "region": "Ростовская область",
-  "city": "Ростов-на-Дону",
+  "city": null,
   "district": "Аксайский район",
   "address": "ул. Большая Садовая",
-  "provider": "rules",
-  "model": null
+  "provider": "openrouter",
+  "model": "qwen/qwen3.6-plus:free"
 }
 ```
 
-Пример без локации:
+### `POST /api/extract-key-words`
 
 ```json
 {
-  "text": "Жители обсуждают качество обслуживания и жалуются на ситуацию",
-  "channel_name": "Городские новости",
-  "channel_description": "Локальные события"
+  "text": "В Аксайском районе пятый день не вывозят мусор, контейнеры переполнены"
 }
 ```
 
-Ожидаемый результат:
+Пример ответа:
 
 ```json
 {
-  "region": null,
-  "city": null,
-  "district": null,
-  "address": null,
-  "provider": "rules",
-  "model": null
+  "key_words": ["мусор", "переполнены", "контейнеры"],
+  "provider": "openrouter",
+  "model": "qwen/qwen3.6-plus:free"
 }
 ```
 
-### Batch Примеры
-
-`POST /api/classify-category/batch`
+### `POST /api/classify-category/batch`
 
 ```json
 {
   "items": [
     {
-      "text": "В поликлинике снова огромная очередь к врачу",
-      "channel_name": "Медицина региона",
+      "text": "Мусор не вывозят уже неделю",
+      "channel_name": "Новости",
       "channel_description": ""
     },
     {
-      "text": "На заводе сообщили о сокращении сотрудников",
-      "channel_name": "Промышленный вестник",
+      "text": "Нет записи к врачу в поликлинике",
+      "channel_name": "Город",
       "channel_description": ""
     }
   ]
 }
 ```
 
-`POST /api/extract-location/batch`
+## Быстрая Проверка Через `curl`
 
-```json
-{
-  "items": [
-    {
-      "text": "В Ростове на проспект Буденновский образовалась пробка",
-      "channel_name": "Транспорт города",
-      "channel_description": ""
-    },
-    {
-      "text": "Жители обсуждают фестиваль еды",
-      "channel_name": "Афиша",
-      "channel_description": ""
-    }
-  ]
-}
-```
-
-## Запуск Тестов
+Классификация:
 
 ```bash
-pytest
+curl -X POST http://127.0.0.1:8000/api/classify-category \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text": "В Аксайском районе пятый день не вывозят мусор, контейнеры переполнены",
+    "channel_name": "Ростов новости",
+    "channel_description": "Новости района"
+  }'
 ```
 
-Покрытие сейчас включает:
+Локация:
 
-- тесты логики категоризации
-- тесты извлечения локации
-- тесты HTTP API
-- тесты переключения `rules/llm`
+```bash
+curl -X POST http://127.0.0.1:8000/api/extract-location \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text": "В Аксайском районе на ул. Большая Садовая переполнены контейнеры",
+    "channel_name": "Ростов новости",
+    "channel_description": "Новости района"
+  }'
+```
+
+Ключевые слова:
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/extract-key-words \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text": "В Аксайском районе пятый день не вывозят мусор, контейнеры переполнены"
+  }'
+```
+
+Проверка health:
+
+```bash
+curl http://127.0.0.1:8000/api/health
+```
+
+## Тесты
+
+Запуск:
+
+```bash
+.venv/bin/python -m pytest -q
+```
+
+Что покрывают тесты:
+
+- API endpoints;
+- обработку batch-запросов;
+- парсинг JSON-ответа модели;
+- нормализацию и валидацию ответа LLM;
+- базовую устойчивость после рефакторинга.
+
+## Примечания
+
+- `scores` — это не строгая вероятность, а оценка уверенности, которую возвращает модель;
+- если OpenRouter вернёт ошибку, API ответит `502`;
+- если не задан `OPENROUTER_API_KEY`, API ответит `503`.
