@@ -27,118 +27,20 @@ def test_categories_endpoint() -> None:
     assert "ЖКХ" in response.json()["categories"]
 
 
-def test_location_directory_endpoint() -> None:
-    response = client.get("/api/location-directory")
-
-    assert response.status_code == 200
-    assert "аксай" in response.json()["locations"]
-
-
-def test_provider_info_endpoint_defaults_to_rules() -> None:
+def test_provider_info_endpoint_returns_llm() -> None:
     response = client.get("/api/provider")
 
     assert response.status_code == 200
-    assert response.json()["provider"] == "rules"
+    assert response.json()["provider"] == "llm"
 
 
-def test_classify_category_endpoint() -> None:
-    response = client.post(
-        "/api/classify-category",
-        json={
-            "text": "На центральной улице огромные ямы и пробки",
-            "channel_name": "Новости дорог",
-            "channel_description": "Проблемы транспорта города",
-        },
-    )
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["category"] == "Дороги и транспорт"
-    assert body["scores"]["Дороги и транспорт"] > 0
-
-
-def test_batch_classify_category_endpoint() -> None:
-    response = client.post(
-        "/api/classify-category/batch",
-        json={
-            "items": [
-                {
-                    "text": "В поликлинике снова огромная очередь к врачу",
-                    "channel_name": "Медицина региона",
-                    "channel_description": "",
-                },
-                {
-                    "text": "На заводе сообщили о сокращении сотрудников",
-                    "channel_name": "Промышленный вестник",
-                    "channel_description": "",
-                },
-            ]
-        },
-    )
-
-    assert response.status_code == 200
-    items = response.json()["items"]
-    assert items[0]["category"] == "Здравоохранение"
-    assert items[1]["category"] == "Экономика и промышленность"
-
-
-def test_extract_location_endpoint() -> None:
-    response = client.post(
-        "/api/extract-location",
-        json={
-            "text": "В Аксайском районе на ул. Большая Садовая переполнены контейнеры",
-            "channel_name": "Ростов новости",
-            "channel_description": "Новости аксайского района",
-        },
-    )
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["region"] == "Ростовская область"
-    assert body["district"] == "Аксайский район"
-    assert body["address"] == "ул. Большая Садовая"
-
-
-def test_extract_location_batch_endpoint() -> None:
-    response = client.post(
-        "/api/extract-location/batch",
-        json={
-            "items": [
-                {
-                    "text": "В Ростове на проспект Буденновский образовалась пробка",
-                    "channel_name": "Транспорт города",
-                    "channel_description": "",
-                },
-                {
-                    "text": "Жители обсуждают фестиваль еды",
-                    "channel_name": "Афиша",
-                    "channel_description": "",
-                },
-            ]
-        },
-    )
-
-    assert response.status_code == 200
-    items = response.json()["items"]
-    assert items[0]["city"] == "Ростов-на-Дону"
-    assert items[0]["address"] == "проспект Буденновский"
-    assert items[1] == {
-        "region": None,
-        "city": None,
-        "district": None,
-        "address": None,
-        "provider": "rules",
-        "model": None,
-    }
-
-
-def test_classify_category_endpoint_uses_llm_provider(monkeypatch) -> None:
+def test_classify_category_endpoint_uses_llm(monkeypatch) -> None:
     monkeypatch.setattr(
         "functions.main.classify_category_llm",
         lambda text, channel_name="", channel_description="": {
             "category": "ЖКХ",
             "scores": {
-                "ЖКХ": 0,
+                "ЖКХ": 100,
                 "Дороги и транспорт": 0,
                 "Здравоохранение": 0,
                 "Образование": 0,
@@ -146,7 +48,7 @@ def test_classify_category_endpoint_uses_llm_provider(monkeypatch) -> None:
                 "Экономика и промышленность": 0,
             },
             "matched_keywords": {
-                "ЖКХ": [],
+                "ЖКХ": ["мусор", "контейнеры"],
                 "Дороги и транспорт": [],
                 "Здравоохранение": [],
                 "Образование": [],
@@ -159,27 +61,77 @@ def test_classify_category_endpoint_uses_llm_provider(monkeypatch) -> None:
     )
 
     response = client.post(
-        "/api/classify-category?provider=llm",
+        "/api/classify-category",
         json={
-            "text": "Тест",
-            "channel_name": "",
+            "text": "В Аксайском районе пятый день не вывозят мусор",
+            "channel_name": "Ростов новости",
             "channel_description": "",
         },
     )
 
     assert response.status_code == 200
     body = response.json()
+    assert body["category"] == "ЖКХ"
     assert body["provider"] == "openrouter"
-    assert body["model"] == "qwen/qwen3.6-plus"
 
 
-def test_extract_location_endpoint_uses_llm_provider(monkeypatch) -> None:
+def test_batch_classify_category_endpoint_uses_llm(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "functions.main.classify_category_llm",
+        lambda text, channel_name="", channel_description="": {
+            "category": "ЖКХ" if "мусор" in text.lower() else "Здравоохранение",
+            "scores": {
+                "ЖКХ": 100 if "мусор" in text.lower() else 0,
+                "Дороги и транспорт": 0,
+                "Здравоохранение": 100 if "врач" in text.lower() else 0,
+                "Образование": 0,
+                "Экология и ЧС": 0,
+                "Экономика и промышленность": 0,
+            },
+            "matched_keywords": {
+                "ЖКХ": ["мусор"] if "мусор" in text.lower() else [],
+                "Дороги и транспорт": [],
+                "Здравоохранение": ["врач"] if "врач" in text.lower() else [],
+                "Образование": [],
+                "Экология и ЧС": [],
+                "Экономика и промышленность": [],
+            },
+            "provider": "openrouter",
+            "model": "qwen/qwen3.6-plus",
+        },
+    )
+
+    response = client.post(
+        "/api/classify-category/batch",
+        json={
+            "items": [
+                {
+                    "text": "Мусор не вывозят",
+                    "channel_name": "",
+                    "channel_description": "",
+                },
+                {
+                    "text": "Нет записи к врачу",
+                    "channel_name": "",
+                    "channel_description": "",
+                },
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    items = response.json()["items"]
+    assert items[0]["category"] == "ЖКХ"
+    assert items[1]["category"] == "Здравоохранение"
+
+
+def test_extract_location_endpoint_uses_llm(monkeypatch) -> None:
     monkeypatch.setattr(
         "functions.main.extract_location_llm",
         lambda text, channel_name="", channel_description="": {
             "region": "Ростовская область",
             "city": "Ростов-на-Дону",
-            "district": None,
+            "district": "Аксайский район",
             "address": "ул. Большая Садовая",
             "provider": "openrouter",
             "model": "qwen/qwen3.6-plus",
@@ -187,9 +139,9 @@ def test_extract_location_endpoint_uses_llm_provider(monkeypatch) -> None:
     )
 
     response = client.post(
-        "/api/extract-location?provider=llm",
+        "/api/extract-location",
         json={
-            "text": "Тест",
+            "text": "В Аксайском районе на ул. Большая Садовая переполнены контейнеры",
             "channel_name": "",
             "channel_description": "",
         },
@@ -197,5 +149,63 @@ def test_extract_location_endpoint_uses_llm_provider(monkeypatch) -> None:
 
     assert response.status_code == 200
     body = response.json()
+    assert body["district"] == "Аксайский район"
     assert body["provider"] == "openrouter"
-    assert body["address"] == "ул. Большая Садовая"
+
+
+def test_extract_location_batch_endpoint_uses_llm(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "functions.main.extract_location_llm",
+        lambda text, channel_name="", channel_description="": {
+            "region": "Ростовская область",
+            "city": "Ростов-на-Дону" if "ростове" in text.lower() else None,
+            "district": None,
+            "address": "проспект Буденновский" if "буденновский" in text.lower() else None,
+            "provider": "openrouter",
+            "model": "qwen/qwen3.6-plus",
+        },
+    )
+
+    response = client.post(
+        "/api/extract-location/batch",
+        json={
+            "items": [
+                {
+                    "text": "В Ростове на проспект Буденновский образовалась пробка",
+                    "channel_name": "",
+                    "channel_description": "",
+                },
+                {
+                    "text": "Жители обсуждают фестиваль еды",
+                    "channel_name": "",
+                    "channel_description": "",
+                },
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    items = response.json()["items"]
+    assert items[0]["city"] == "Ростов-на-Дону"
+    assert items[1]["address"] is None
+
+
+def test_extract_key_words_endpoint_uses_llm(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "functions.main.extract_key_words_llm",
+        lambda text: {
+            "key_words": ["мусор", "переполнены"],
+            "provider": "openrouter",
+            "model": "qwen/qwen3.6-plus",
+        },
+    )
+
+    response = client.post(
+        "/api/extract-key-words",
+        json={"text": "В Аксайском районе не вывозят мусор"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["key_words"] == ["мусор", "переполнены"]
+    assert body["provider"] == "openrouter"

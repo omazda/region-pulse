@@ -1,8 +1,12 @@
+from fastapi import HTTPException
+
 from functions.main import (
-    classify_category,
-    contains_keyword,
-    extract_location,
+    CATEGORY_NAMES,
+    classify_category_llm,
+    extract_key_words_llm,
+    extract_location_llm,
     normalize_text,
+    parse_json_from_llm,
 )
 
 
@@ -10,67 +14,87 @@ def test_normalize_text_normalizes_case_and_spaces() -> None:
     assert normalize_text("  Ёлка   И   ДВОР  ") == "елка и двор"
 
 
-def test_contains_keyword_uses_word_boundaries() -> None:
-    assert contains_keyword("новости тсж района", "тсж") is True
-    assert contains_keyword("закупки региона", "ук") is False
+def test_parse_json_from_llm_accepts_plain_json() -> None:
+    assert parse_json_from_llm('{"key":"value"}') == {"key": "value"}
 
 
-def test_classify_category_returns_housing_category() -> None:
-    result = classify_category(
-        text="В Аксайском районе пятый день не вывозят мусор, контейнеры переполнены",
-        channel_name="Ростов новости",
-        channel_description="Новости аксайского района и суворовского ТСЖ",
+def test_parse_json_from_llm_accepts_fenced_json() -> None:
+    content = '```json\n{"key":"value"}\n```'
+
+    assert parse_json_from_llm(content) == {"key": "value"}
+
+
+def test_classify_category_llm_normalizes_missing_fields(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "functions.main.call_openrouter",
+        lambda messages: {
+            "category": "ЖКХ",
+            "provider": "openrouter",
+            "model": "qwen/qwen3.6-plus",
+        },
     )
+
+    result = classify_category_llm("Тест")
 
     assert result["category"] == "ЖКХ"
-    assert result["scores"]["ЖКХ"] > 0
-    assert "мусор" in result["matched_keywords"]["ЖКХ"]
+    assert result["scores"] == {name: 0 for name in CATEGORY_NAMES}
+    assert result["matched_keywords"] == {name: [] for name in CATEGORY_NAMES}
 
 
-def test_classify_category_uses_channel_context() -> None:
-    result = classify_category(
-        text="Жители жалуются на качество обслуживания",
-        channel_name="ТСЖ Суворовский",
-        channel_description="Обсуждаем управляющую компанию и двор",
+def test_classify_category_llm_rejects_invalid_category(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "functions.main.call_openrouter",
+        lambda messages: {
+            "category": "Спорт",
+            "scores": {},
+            "matched_keywords": {},
+            "provider": "openrouter",
+            "model": "qwen/qwen3.6-plus",
+        },
     )
 
-    assert result["category"] == "ЖКХ"
-    assert "тсж" in result["matched_keywords"]["ЖКХ"]
+    try:
+        classify_category_llm("Тест")
+        assert False, "Expected HTTPException"
+    except HTTPException as error:
+        assert error.status_code == 502
 
 
-def test_classify_category_returns_undefined_when_no_matches() -> None:
-    result = classify_category(
-        text="В регионе прошел фестиваль уличной еды",
-        channel_name="Афиша Ростова",
-        channel_description="Культурные события и досуг",
+def test_extract_location_llm_returns_payload(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "functions.main.call_openrouter",
+        lambda messages: {
+            "region": "Ростовская область",
+            "city": "Ростов-на-Дону",
+            "district": "Аксайский район",
+            "address": "ул. Большая Садовая",
+            "provider": "openrouter",
+            "model": "qwen/qwen3.6-plus",
+        },
     )
 
-    assert result["category"] == "Не определено"
+    result = extract_location_llm("Тест")
 
-
-def test_extract_location_normalizes_district_and_city() -> None:
-    result = extract_location(
-        text="В Аксайском районе на ул. Большая Садовая пятый день не вывозят мусор",
-        channel_name="Ростов новости",
-        channel_description="Новости аксайского района и суворовского ТСЖ",
-    )
-
-    assert result["region"] == "Ростовская область"
-    assert result["city"] == "Ростов-на-Дону"
     assert result["district"] == "Аксайский район"
     assert result["address"] == "ул. Большая Садовая"
 
 
-def test_extract_location_returns_nulls_when_location_missing() -> None:
-    result = extract_location(
-        text="Жители обсуждают качество обслуживания без указания адреса",
-        channel_name="Городские новости",
-        channel_description="Локальные события",
+def test_extract_key_words_llm_limits_and_cleans_output(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "functions.main.call_openrouter",
+        lambda messages: {
+            "key_words": [" мусор ", "", "переполнены", "контейнеры", "жалобы", "ЖКХ"],
+            "provider": "openrouter",
+            "model": "qwen/qwen3.6-plus",
+        },
     )
 
-    assert result == {
-        "region": None,
-        "city": None,
-        "district": None,
-        "address": None,
-    }
+    result = extract_key_words_llm("Тест")
+
+    assert result["key_words"] == [
+        "мусор",
+        "переполнены",
+        "контейнеры",
+        "жалобы",
+        "ЖКХ",
+    ]
