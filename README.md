@@ -1,301 +1,149 @@
 # Region Pulse
 
-LLM-only backend для анализа региональных сообщений, новостей и обращений граждан.
+Backend для анализа региональных сообщений на `FastAPI`, теперь с провайдером `GigaChat`.
 
-Сервис использует модель через OpenRouter и умеет:
+Что умеет сервис:
 
-- классифицировать сообщение по категории;
-- извлекать географию из текста;
-- выделять ключевые слова;
-- обрабатывать одиночные и batch-запросы;
-- отдавать HTTP API и Swagger-документацию.
-
-## Что Умеет API
-
-### Классификация
-
-`POST /api/classify-category`
-
-Возвращает:
-
-- `category` — итоговая категория;
-- `scores` — оценка уверенности по каждой категории;
-- `matched_keywords` — ключевые слова, связанные с категориями;
-- `provider` — источник ответа, сейчас `openrouter`;
-- `model` — имя модели.
-
-Поддерживаемые категории:
-
-- `ЖКХ`
-- `Дороги и транспорт`
-- `Здравоохранение`
-- `Образование`
-- `Экология и ЧС`
-- `Экономика и промышленность`
-
-### Извлечение Географии
-
-`POST /api/extract-location`
-
-Возвращает:
-
-- `region`
-- `city`
-- `district`
-- `address`
-- `provider`
-- `model`
-
-### Ключевые Слова
-
-`POST /api/extract-key-words`
-
-Возвращает:
-
-- `key_words`
-- `provider`
-- `model`
+- классифицировать сообщения по отрасли;
+- извлекать географию и ключевые слова;
+- делать объединённый анализ одного сообщения за один LLM-вызов;
+- считать токены перед отправкой больших батчей;
+- собирать карточки проблем через embeddings + кластеризацию + суммаризацию;
+- автоматически получать и обновлять `access_token`.
 
 ## Стек
 
 - `FastAPI`
-- `Pydantic`
 - `httpx`
 - `python-dotenv`
 - `pytest`
 
-## Структура Проекта
+## Переменные окружения
 
-```text
-region-pulse/
-├── functions/
-│   └── main.py
-├── tests/
-│   ├── test_api.py
-│   └── test_logic.py
-├── .env
-├── .gitignore
-├── pytest.ini
-├── README.md
-└── requirements.txt
-```
-
-## Установка
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-```
-
-## Настройка `.env`
-
-Минимальный пример:
+Минимальный пример `.env`:
 
 ```env
-OPENROUTER_API_KEY=your_api_key
-REGION_PULSE_PROVIDER=llm
-OPENROUTER_MODEL=qwen/qwen3.6-plus:free
-OPENROUTER_APP_URL=http://localhost:8000
-OPENROUTER_APP_NAME=region-pulse
+REGION_PULSE_PROVIDER=gigachat
+GIGACHAT_MODEL=GigaChat-2-Lite
+GIGACHAT_EMBEDDINGS_MODEL=Embeddings-2
+GIGACHAT_SCOPE=GIGACHAT_API_PERS
+CLIENT_ID=...
+CLIENT_SECRET=...
+# Если сертификат уже доверен системой, строка ниже не нужна.
+# GIGACHAT_CA_BUNDLE=D:\region-pulse\certs\russian_trusted_root_ca_pem.crt
+# Только для локальной диагностики, небезопасно для production:
+# GIGACHAT_VERIFY_SSL=false
 ```
 
-Переменные:
+Поддерживаются варианты авторизации:
 
-- `OPENROUTER_API_KEY` — ключ OpenRouter;
-- `REGION_PULSE_PROVIDER` — текущий режим, сейчас должен быть `llm`;
-- `OPENROUTER_MODEL` — модель для вызова;
-- `OPENROUTER_APP_URL` — ваш локальный URL приложения;
-- `OPENROUTER_APP_NAME` — имя приложения для заголовков OpenRouter.
+- `GIGACHAT_AUTH_KEY` или `GIGACHAT_CREDENTIALS`
+- либо пара `CLIENT_ID` + `CLIENT_SECRET`
+- для мягкой миграции также читается старый `OPENROUTER_API_KEY`, если там лежит basic key от GigaChat
+
+Полезные опции:
+
+- `ANALYSIS_CACHE_TTL_SECONDS` — TTL кэша анализа одного сообщения
+- `ANALYSIS_CACHE_LIMIT` — лимит записей в кэше
+- `GIGACHAT_MAX_CONCURRENCY` — число одновременных запросов
+- `GIGACHAT_VERIFY_SSL=false` — отключает TLS-проверку для локальной диагностики
 
 Важно:
 
-- проект сейчас работает только через LLM;
-- локального `rules`-режима больше нет;
-- `.env` не должен попадать в git.
+- для `ngw.devices.sberbank.ru:9443` обычно нужен корневой сертификат Минцифры / доверенный CA bundle;
+- если корневой сертификат уже установлен в системе и доверен, `GIGACHAT_CA_BUNDLE` можно не указывать;
+- для быстрой диагностики можно включить `GIGACHAT_VERIFY_SSL=false`, но это отключает проверку TLS и не подходит для production;
+- по документации GigaChat у физлиц обычно доступен один одновременный поток, поэтому по умолчанию стоит `1`.
 
 ## Запуск
 
 ```bash
-.venv/bin/uvicorn functions.main:app --reload
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+uvicorn functions.main:app --reload
 ```
 
-После запуска:
-
-- root: `http://127.0.0.1:8000/`
-- docs: `http://127.0.0.1:8000/docs`
-- health: `http://127.0.0.1:8000/api/health`
-
-## Эндпоинты
+## Основные эндпоинты
 
 - `GET /`
 - `GET /api/health`
-- `GET /api/provider`
 - `GET /api/categories`
+- `GET /api/provider`
+- `POST /api/analyze-message`
+- `POST /api/analyze-message/batch`
 - `POST /api/classify-category`
 - `POST /api/classify-category/batch`
 - `POST /api/extract-location`
 - `POST /api/extract-location/batch`
 - `POST /api/extract-key-words`
+- `POST /api/token-count`
+- `POST /api/problem-cards/build`
 
-## Примеры Запросов
+## Почему это экономнее для GigaChat-2-Lite
 
-### `POST /api/classify-category`
+- классификация, ключевые слова и география собираются одним вызовом вместо трёх;
+- результаты анализа кэшируются по нормализованному тексту;
+- карточки проблем строятся через embeddings, LLM-анализ элементов батча, LLM-review спорных слияний и суммаризацию кластера;
+- если GigaChat временно недоступен, одиночный анализ падает в локальные эвристики, а карточки проблем могут собираться на локальных hash-embeddings.
 
-```json
-{
-  "text": "В Аксайском районе пятый день не вывозят мусор, контейнеры переполнены",
-  "channel_name": "Ростов новости",
-  "channel_description": "Новости района"
-}
-```
+## Как проверить руками
 
-Пример ответа:
-
-```json
-{
-  "category": "ЖКХ",
-  "scores": {
-    "ЖКХ": 95,
-    "Дороги и транспорт": 5,
-    "Здравоохранение": 0,
-    "Образование": 0,
-    "Экология и ЧС": 10,
-    "Экономика и промышленность": 0
-  },
-  "matched_keywords": {
-    "ЖКХ": ["мусор", "контейнеры"],
-    "Дороги и транспорт": [],
-    "Здравоохранение": [],
-    "Образование": [],
-    "Экология и ЧС": [],
-    "Экономика и промышленность": []
-  },
-  "provider": "openrouter",
-  "model": "qwen/qwen3.6-plus:free"
-}
-```
-
-### `POST /api/extract-location`
-
-```json
-{
-  "text": "В Аксайском районе на ул. Большая Садовая переполнены контейнеры",
-  "channel_name": "Ростов новости",
-  "channel_description": "Новости района"
-}
-```
-
-Пример ответа:
-
-```json
-{
-  "region": "Ростовская область",
-  "city": null,
-  "district": "Аксайский район",
-  "address": "ул. Большая Садовая",
-  "provider": "openrouter",
-  "model": "qwen/qwen3.6-plus:free"
-}
-```
-
-### `POST /api/extract-key-words`
-
-```json
-{
-  "text": "В Аксайском районе пятый день не вывозят мусор, контейнеры переполнены"
-}
-```
-
-Пример ответа:
-
-```json
-{
-  "key_words": ["мусор", "переполнены", "контейнеры"],
-  "provider": "openrouter",
-  "model": "qwen/qwen3.6-plus:free"
-}
-```
-
-### `POST /api/classify-category/batch`
-
-```json
-{
-  "items": [
-    {
-      "text": "Мусор не вывозят уже неделю",
-      "channel_name": "Новости",
-      "channel_description": ""
-    },
-    {
-      "text": "Нет записи к врачу в поликлинике",
-      "channel_name": "Город",
-      "channel_description": ""
-    }
-  ]
-}
-```
-
-## Быстрая Проверка Через `curl`
-
-Классификация:
+Сценарий 1. Проверить, что анализ реально идёт через LLM:
 
 ```bash
-curl -X POST http://127.0.0.1:8000/api/classify-category \
-  -H "Content-Type: application/json" \
-  -d '{
-    "text": "В Аксайском районе пятый день не вывозят мусор, контейнеры переполнены",
-    "channel_name": "Ростов новости",
-    "channel_description": "Новости района"
-  }'
+curl -X POST http://127.0.0.1:8000/api/analyze-message ^
+  -H "Content-Type: application/json" ^
+  -d "{\"text\":\"В Аксайском районе уже неделю не вывозят мусор, контейнеры переполнены\",\"channel_name\":\"Аксай Новости\",\"channel_description\":\"Жалобы жителей\"}"
 ```
 
-Локация:
+Что смотреть в ответе:
+
+- `provider` должен быть `gigachat`
+- `analysis_source` должен быть `llm`
+- `category` ожидаемо должен быть `ЖКХ`
+- `district` или `region` должны быть заполнены
+
+Сценарий 2. Проверить кэш:
+
+- отправьте тот же запрос второй раз
+- в ответе должно стать `cached=true`
+
+Сценарий 3. Проверить сборку карточек проблем:
 
 ```bash
-curl -X POST http://127.0.0.1:8000/api/extract-location \
-  -H "Content-Type: application/json" \
-  -d '{
-    "text": "В Аксайском районе на ул. Большая Садовая переполнены контейнеры",
-    "channel_name": "Ростов новости",
-    "channel_description": "Новости района"
-  }'
+curl -X POST http://127.0.0.1:8000/api/problem-cards/build ^
+  -H "Content-Type: application/json" ^
+  -d @answer_example.json
 ```
 
-Ключевые слова:
+Что смотреть в ответе:
+
+- `total_clusters` должен быть больше 0
+- `llm_item_analyses_used` должен быть больше 0
+- `cards[0].mentions_count` должен быть больше 1 для повторяющейся проблемы
+- `cards[0].summary` должен быть не пустым
+
+Сценарий 4. Проверить расход токенов перед батчем:
 
 ```bash
-curl -X POST http://127.0.0.1:8000/api/extract-key-words \
-  -H "Content-Type: application/json" \
-  -d '{
-    "text": "В Аксайском районе пятый день не вывозят мусор, контейнеры переполнены"
-  }'
+curl -X POST http://127.0.0.1:8000/api/token-count ^
+  -H "Content-Type: application/json" ^
+  -d "{\"inputs\":[\"В Аксайском районе не вывозят мусор\",\"Нет записи к терапевту в поликлинике\"]}"
 ```
 
-Проверка health:
-
-```bash
-curl http://127.0.0.1:8000/api/health
-```
+Это удобно, чтобы быстро оценить бюджет перед большими прогонами.
 
 ## Тесты
 
-Запуск:
-
 ```bash
-.venv/bin/python -m pytest -q
+python -m pytest -q
 ```
 
-Что покрывают тесты:
+## Отдельный скрипт для токена
 
-- API endpoints;
-- обработку batch-запросов;
-- парсинг JSON-ответа модели;
-- нормализацию и валидацию ответа LLM;
-- базовую устойчивость после рефакторинга.
+Есть утилита `get_access_tocken.py`. Она не нужна самому backend, но удобна для ручной проверки авторизации:
 
-## Примечания
-
-- `scores` — это не строгая вероятность, а оценка уверенности, которую возвращает модель;
-- если OpenRouter вернёт ошибку, API ответит `502`;
-- если не задан `OPENROUTER_API_KEY`, API ответит `503`.
+```bash
+python get_access_tocken.py
+```

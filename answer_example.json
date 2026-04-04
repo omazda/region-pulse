@@ -1,0 +1,52 @@
+{
+  "items": [
+    {
+      "id": "src-1",
+      "text": "В Аксайском районе уже неделю не вывозят мусор, контейнеры переполнены, жители жалуются на запах.",
+      "channel_name": "Аксай Новости",
+      "channel_description": "Локальные новости и жалобы жителей",
+      "source_name": "Аксай Новости",
+      "source_type": "telegram",
+      "source_url": "https://example.com/post-1",
+      "published_at": "2026-04-02T09:00:00+00:00"
+    },
+    {
+      "id": "src-2",
+      "text": "Контейнерные площадки в Аксайском районе не обслуживаются, вывоз ТКО сорван уже несколько дней.",
+      "channel_name": "ЖКХ Ростов",
+      "channel_description": "Мониторинг коммунальных проблем",
+      "source_name": "ЖКХ Ростов",
+      "source_type": "telegram",
+      "source_url": "https://example.com/post-2",
+      "published_at": "2026-04-03T10:30:00+00:00"
+    },
+    {
+      "id": "src-3",
+      "text": "Жители Аксая публикуют фото переполненных мусорных контейнеров рядом с домами и детской площадкой.",
+      "channel_name": "Наш Аксай",
+      "channel_description": "Сообщения жителей города",
+      "source_name": "Наш Аксай",
+      "source_type": "telegram",
+      "source_url": "https://example.com/post-3",
+      "published_at": "2026-04-04T08:15:00+00:00"
+    },
+    {
+      "id": "src-4",
+      "text": "В поликлинике Батайска снова нет записи к терапевту на ближайшие две недели.",
+      "channel_name": "Медицина Дон",
+      "channel_description": "Проблемы здравоохранения региона",
+      "source_name": "Медицина Дон",
+      "source_type": "telegram",
+      "source_url": "https://example.com/post-4",
+      "published_at": "2026-04-04T12:00:00+00:00"
+    }
+  ],
+  "top_k": 10,
+  "similarity_threshold": 0.78,
+  "time_window_days": 14,
+  "summarization_items": 4,
+  "llm_item_analysis": true,
+  "llm_item_limit": 10,
+  "llm_cluster_review": true,
+  "llm_cluster_review_limit": 6
+}

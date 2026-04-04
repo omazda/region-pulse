@@ -1,0 +1,40 @@
+﻿{
+  "items": [
+    {
+      "id": "mix-1",
+      "text": "В Аксайском районе уже неделю не вывозят мусор, контейнеры переполнены.",
+      "channel_name": "Аксай Новости",
+      "channel_description": "Жалобы жителей",
+      "source_name": "Аксай Новости",
+      "source_type": "telegram",
+      "source_url": "https://example.com/mix-1",
+      "published_at": "2026-04-04T09:00:00+00:00"
+    },
+    {
+      "id": "mix-2",
+      "text": "Жители Аксая жалуются на срыв вывоза ТКО и неприятный запах возле домов.",
+      "channel_name": "ЖКХ Ростов",
+      "channel_description": "Коммунальные проблемы",
+      "source_name": "ЖКХ Ростов",
+      "source_type": "telegram",
+      "source_url": "https://example.com/mix-2",
+      "published_at": "2026-04-04T10:30:00+00:00"
+    },
+    {
+      "id": "mix-3",
+      "text": "Спасибо коммунальщикам, мусор сегодня наконец вывезли и площадку привели в порядок.",
+      "channel_name": "Наш Аксай",
+      "channel_description": "Новости города",
+      "source_name": "Наш Аксай",
+      "source_type": "telegram",
+      "source_url": "https://example.com/mix-3",
+      "published_at": "2026-04-04T11:00:00+00:00"
+    }
+  ],
+  "top_k": 10,
+  "llm_item_analysis": true,
+  "llm_item_limit": 10,
+  "llm_cluster_review": true,
+  "llm_cluster_review_limit": 6,
+  "negative_only": true
+}
