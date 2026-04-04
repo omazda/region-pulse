@@ -1,8 +1,8 @@
 # Region Pulse
 
-LLM-only backend для анализа региональных сообщений, новостей и обращений граждан.
+Асинхронный LLM-only backend для анализа региональных сообщений, новостей и обращений граждан.
 
-Сервис использует модель через OpenRouter и умеет:
+Сервис использует модель через GigaChat и умеет:
 
 - классифицировать сообщение по категории;
 - извлекать географию из текста;
@@ -19,9 +19,8 @@ LLM-only backend для анализа региональных сообщени
 Возвращает:
 
 - `category` — итоговая категория;
-- `scores` — оценка уверенности по каждой категории;
 - `matched_keywords` — ключевые слова, связанные с категориями;
-- `provider` — источник ответа, сейчас `openrouter`;
+- `provider` — источник ответа, сейчас `gigachat`;
 - `model` — имя модели.
 
 Поддерживаемые категории:
@@ -32,6 +31,11 @@ LLM-only backend для анализа региональных сообщени
 - `Образование`
 - `Экология и ЧС`
 - `Экономика и промышленность`
+- `Социальная защита и выплаты`
+- `Благоустройство и городская среда`
+- `Безопасность и правопорядок`
+- `Госуслуги и обращения граждан`
+- `Жилье и строительство`
 
 ### Извлечение Географии
 
@@ -93,25 +97,34 @@ pip install -r requirements.txt
 Минимальный пример:
 
 ```env
-OPENROUTER_API_KEY=your_api_key
 REGION_PULSE_PROVIDER=llm
-OPENROUTER_MODEL=qwen/qwen3.6-plus:free
-OPENROUTER_APP_URL=http://localhost:8000
-OPENROUTER_APP_NAME=region-pulse
+GIGACHAT_MODEL=GigaChat-2
+GIGACHAT_TIMEOUT=60
+GIGACHAT_VERIFY_SSL_CERTS=false
+GIGACHAT_BASE_URL=https://gigachat.devices.sberbank.ru/api/v1
+GIGACHAT_AUTH_URL=https://ngw.devices.sberbank.ru:9443/api/v2/oauth
+GIGACHAT_SCOPE=GIGACHAT_API_PERS
+GIGACHAT_CLIENT_ID=your_client_id
+GIGACHAT_CLIENT_SECRET=your_client_secret
 ```
 
 Переменные:
 
-- `OPENROUTER_API_KEY` — ключ OpenRouter;
 - `REGION_PULSE_PROVIDER` — текущий режим, сейчас должен быть `llm`;
-- `OPENROUTER_MODEL` — модель для вызова;
-- `OPENROUTER_APP_URL` — ваш локальный URL приложения;
-- `OPENROUTER_APP_NAME` — имя приложения для заголовков OpenRouter.
+- `GIGACHAT_MODEL` — модель для вызова;
+- `GIGACHAT_TIMEOUT` — таймаут запроса в секундах;
+- `GIGACHAT_VERIFY_SSL_CERTS` — проверять ли SSL-сертификаты (`true` или `false`).
+- `GIGACHAT_BASE_URL` — base URL REST API GigaChat;
+- `GIGACHAT_AUTH_URL` — OAuth endpoint для получения токена;
+- `GIGACHAT_SCOPE` — scope для OAuth;
+- `GIGACHAT_CLIENT_ID` и `GIGACHAT_CLIENT_SECRET` — данные для автоматического обновления токена.
 
 Важно:
 
 - проект сейчас работает только через LLM;
 - локального `rules`-режима больше нет;
+- токен GigaChat обновляется автоматически через `client_id/client_secret`;
+- можно использовать `GIGACHAT_ACCESS_TOKEN` как ручной fallback, но это не основной режим;
 - `.env` не должен попадать в git.
 
 ## Запуск
@@ -155,24 +168,21 @@ OPENROUTER_APP_NAME=region-pulse
 ```json
 {
   "category": "ЖКХ",
-  "scores": {
-    "ЖКХ": 95,
-    "Дороги и транспорт": 5,
-    "Здравоохранение": 0,
-    "Образование": 0,
-    "Экология и ЧС": 10,
-    "Экономика и промышленность": 0
-  },
   "matched_keywords": {
     "ЖКХ": ["мусор", "контейнеры"],
     "Дороги и транспорт": [],
     "Здравоохранение": [],
     "Образование": [],
     "Экология и ЧС": [],
-    "Экономика и промышленность": []
+    "Экономика и промышленность": [],
+    "Социальная защита и выплаты": [],
+    "Благоустройство и городская среда": [],
+    "Безопасность и правопорядок": [],
+    "Госуслуги и обращения граждан": [],
+    "Жилье и строительство": []
   },
-  "provider": "openrouter",
-  "model": "qwen/qwen3.6-plus:free"
+  "provider": "gigachat",
+  "model": "GigaChat-2"
 }
 ```
 
@@ -194,8 +204,8 @@ OPENROUTER_APP_NAME=region-pulse
   "city": null,
   "district": "Аксайский район",
   "address": "ул. Большая Садовая",
-  "provider": "openrouter",
-  "model": "qwen/qwen3.6-plus:free"
+  "provider": "gigachat",
+  "model": "GigaChat-2"
 }
 ```
 
@@ -212,8 +222,8 @@ OPENROUTER_APP_NAME=region-pulse
 ```json
 {
   "key_words": ["мусор", "переполнены", "контейнеры"],
-  "provider": "openrouter",
-  "model": "qwen/qwen3.6-plus:free"
+  "provider": "gigachat",
+  "model": "GigaChat-2"
 }
 ```
 
@@ -278,6 +288,80 @@ curl -X POST http://127.0.0.1:8000/api/extract-key-words \
 curl http://127.0.0.1:8000/api/health
 ```
 
+### Проверка Категорий
+
+`ЖКХ`
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/classify-category \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text":"Во дворе уже неделю не вывозят мусор, контейнеры переполнены",
+    "channel_name":"Новости района",
+    "channel_description":"Проблемы города"
+  }'
+```
+
+`Социальная защита и выплаты`
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/classify-category \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text":"Семья не может получить положенное пособие на ребенка уже третий месяц",
+    "channel_name":"Соцподдержка",
+    "channel_description":"Выплаты и льготы"
+  }'
+```
+
+`Благоустройство и городская среда`
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/classify-category \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text":"Во дворе разбитая детская площадка и не работает уличное освещение",
+    "channel_name":"Комфортная среда",
+    "channel_description":"Благоустройство города"
+  }'
+```
+
+`Безопасность и правопорядок`
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/classify-category \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text":"Жители просят усилить патрулирование района из-за серии ночных краж",
+    "channel_name":"Безопасный город",
+    "channel_description":"Проблемы правопорядка"
+  }'
+```
+
+`Госуслуги и обращения граждан`
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/classify-category \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text":"Через портал не получается подать обращение, заявление зависает на последнем шаге",
+    "channel_name":"Госуслуги онлайн",
+    "channel_description":"Проблемы с сервисами"
+  }'
+```
+
+`Жилье и строительство`
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/classify-category \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text":"Дольщики жалуются на срыв сроков сдачи дома и отсутствие информации от застройщика",
+    "channel_name":"Жилье и стройка",
+    "channel_description":"Проблемы строительства"
+  }'
+```
+
 ## Тесты
 
 Запуск:
@@ -291,11 +375,12 @@ curl http://127.0.0.1:8000/api/health
 - API endpoints;
 - обработку batch-запросов;
 - парсинг JSON-ответа модели;
-- нормализацию и валидацию ответа LLM;
+- валидацию ответа LLM;
+- асинхронный слой вызова LLM;
 - базовую устойчивость после рефакторинга.
 
 ## Примечания
 
-- `scores` — это не строгая вероятность, а оценка уверенности, которую возвращает модель;
-- если OpenRouter вернёт ошибку, API ответит `502`;
-- если не задан `OPENROUTER_API_KEY`, API ответит `503`.
+- если GigaChat вернёт ошибку, API ответит `502`;
+- если не заданы данные доступа к GigaChat, API ответит `503`.
+- сервис использует прямой REST API GigaChat через `httpx.AsyncClient`, без SDK.

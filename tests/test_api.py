@@ -1,3 +1,5 @@
+import asyncio
+
 from fastapi.testclient import TestClient
 
 from functions.main import app
@@ -35,18 +37,9 @@ def test_provider_info_endpoint_returns_llm() -> None:
 
 
 def test_classify_category_endpoint_uses_llm(monkeypatch) -> None:
-    monkeypatch.setattr(
-        "functions.main.classify_category_llm",
-        lambda text, channel_name="", channel_description="": {
+    async def mock_classify_category_llm(text, channel_name="", channel_description=""):
+        return {
             "category": "ЖКХ",
-            "scores": {
-                "ЖКХ": 100,
-                "Дороги и транспорт": 0,
-                "Здравоохранение": 0,
-                "Образование": 0,
-                "Экология и ЧС": 0,
-                "Экономика и промышленность": 0,
-            },
             "matched_keywords": {
                 "ЖКХ": ["мусор", "контейнеры"],
                 "Дороги и транспорт": [],
@@ -55,9 +48,13 @@ def test_classify_category_endpoint_uses_llm(monkeypatch) -> None:
                 "Экология и ЧС": [],
                 "Экономика и промышленность": [],
             },
-            "provider": "openrouter",
-            "model": "qwen/qwen3.6-plus",
-        },
+            "provider": "gigachat",
+            "model": "GigaChat-2",
+        }
+
+    monkeypatch.setattr(
+        "functions.main.classify_category_llm",
+        mock_classify_category_llm,
     )
 
     response = client.post(
@@ -72,22 +69,13 @@ def test_classify_category_endpoint_uses_llm(monkeypatch) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["category"] == "ЖКХ"
-    assert body["provider"] == "openrouter"
+    assert body["provider"] == "gigachat"
 
 
 def test_batch_classify_category_endpoint_uses_llm(monkeypatch) -> None:
-    monkeypatch.setattr(
-        "functions.main.classify_category_llm",
-        lambda text, channel_name="", channel_description="": {
+    async def mock_classify_category_llm(text, channel_name="", channel_description=""):
+        return {
             "category": "ЖКХ" if "мусор" in text.lower() else "Здравоохранение",
-            "scores": {
-                "ЖКХ": 100 if "мусор" in text.lower() else 0,
-                "Дороги и транспорт": 0,
-                "Здравоохранение": 100 if "врач" in text.lower() else 0,
-                "Образование": 0,
-                "Экология и ЧС": 0,
-                "Экономика и промышленность": 0,
-            },
             "matched_keywords": {
                 "ЖКХ": ["мусор"] if "мусор" in text.lower() else [],
                 "Дороги и транспорт": [],
@@ -96,9 +84,13 @@ def test_batch_classify_category_endpoint_uses_llm(monkeypatch) -> None:
                 "Экология и ЧС": [],
                 "Экономика и промышленность": [],
             },
-            "provider": "openrouter",
-            "model": "qwen/qwen3.6-plus",
-        },
+            "provider": "gigachat",
+            "model": "GigaChat-2",
+        }
+
+    monkeypatch.setattr(
+        "functions.main.classify_category_llm",
+        mock_classify_category_llm,
     )
 
     response = client.post(
@@ -126,16 +118,19 @@ def test_batch_classify_category_endpoint_uses_llm(monkeypatch) -> None:
 
 
 def test_extract_location_endpoint_uses_llm(monkeypatch) -> None:
-    monkeypatch.setattr(
-        "functions.main.extract_location_llm",
-        lambda text, channel_name="", channel_description="": {
+    async def mock_extract_location_llm(text, channel_name="", channel_description=""):
+        return {
             "region": "Ростовская область",
             "city": "Ростов-на-Дону",
             "district": "Аксайский район",
             "address": "ул. Большая Садовая",
-            "provider": "openrouter",
-            "model": "qwen/qwen3.6-plus",
-        },
+            "provider": "gigachat",
+            "model": "GigaChat-2",
+        }
+
+    monkeypatch.setattr(
+        "functions.main.extract_location_llm",
+        mock_extract_location_llm,
     )
 
     response = client.post(
@@ -150,20 +145,23 @@ def test_extract_location_endpoint_uses_llm(monkeypatch) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["district"] == "Аксайский район"
-    assert body["provider"] == "openrouter"
+    assert body["provider"] == "gigachat"
 
 
 def test_extract_location_batch_endpoint_uses_llm(monkeypatch) -> None:
-    monkeypatch.setattr(
-        "functions.main.extract_location_llm",
-        lambda text, channel_name="", channel_description="": {
+    async def mock_extract_location_llm(text, channel_name="", channel_description=""):
+        return {
             "region": "Ростовская область",
             "city": "Ростов-на-Дону" if "ростове" in text.lower() else None,
             "district": None,
             "address": "проспект Буденновский" if "буденновский" in text.lower() else None,
-            "provider": "openrouter",
-            "model": "qwen/qwen3.6-plus",
-        },
+            "provider": "gigachat",
+            "model": "GigaChat-2",
+        }
+
+    monkeypatch.setattr(
+        "functions.main.extract_location_llm",
+        mock_extract_location_llm,
     )
 
     response = client.post(
@@ -191,13 +189,16 @@ def test_extract_location_batch_endpoint_uses_llm(monkeypatch) -> None:
 
 
 def test_extract_key_words_endpoint_uses_llm(monkeypatch) -> None:
+    async def mock_extract_key_words_llm(text):
+        return {
+            "key_words": ["мусор", "переполнены"],
+            "provider": "gigachat",
+            "model": "GigaChat-2",
+        }
+
     monkeypatch.setattr(
         "functions.main.extract_key_words_llm",
-        lambda text: {
-            "key_words": ["мусор", "переполнены"],
-            "provider": "openrouter",
-            "model": "qwen/qwen3.6-plus",
-        },
+        mock_extract_key_words_llm,
     )
 
     response = client.post(
@@ -208,4 +209,4 @@ def test_extract_key_words_endpoint_uses_llm(monkeypatch) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["key_words"] == ["мусор", "переполнены"]
-    assert body["provider"] == "openrouter"
+    assert body["provider"] == "gigachat"
